@@ -311,7 +311,25 @@ const verifyToken = async (req, res, next) => {
     // Application Routes (Tutor Apply) 
 
     // Tutor applies to a tuition
-   
+    app.post("/applications", verifyToken, verifyTutor, async (req, res) => {
+      const application = {
+        ...req.body,
+        tutorEmail: req.user.email,
+        tuitionId: req.body.tuitionId,
+        status: "pending", // pending | approved | rejected
+        appliedAt: new Date(),
+      };
+
+      // Prevent duplicate application
+      const exists = await applicationsCollection.findOne({
+        tutorEmail: req.user.email,
+        tuitionId: req.body.tuitionId,
+      });
+      if (exists) return res.status(400).send({ message: "Already applied" });
+
+      const result = await applicationsCollection.insertOne(application);
+      res.send(result);
+    });
 
     // Get applications for a tuition (Student sees who applied)
     app.get(

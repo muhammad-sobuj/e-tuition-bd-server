@@ -82,14 +82,7 @@ const verifyToken = async (req, res, next) => {
 
 
     // Role-based middlewares
-    const verifyStudent = async (req, res, next) => {
-      const user = await usersCollection.findOne({ email: req.user.email });
-      if (user?.role !== "student") {
-        return res.status(403).send({ message: "Forbidden: Student only" });
-      }
-      req.currentUser = user;
-      next();
-    };
+   
 
     const verifyTutor = async (req, res, next) => {
       const user = await usersCollection.findOne({ email: req.user.email });

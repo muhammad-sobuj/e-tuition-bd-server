@@ -3,7 +3,6 @@ const express = require("express");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-console.log("Stripe key:", process.env.STRIPE_SECRET_KEY);
 const admin = require("firebase-admin");
 const jwt = require("jsonwebtoken");
 const port = process.env.PORT || 3000;
@@ -53,33 +52,30 @@ async function run() {
     const messagesCollection = db.collection("messages");
     console.log("MongoDB Connected Successfully!");
 
-    // JWT & Firebase Verify Middleware 
+    // JWT & Firebase Verify Middleware
 
+    const verifyToken = async (req, res, next) => {
+      const authHeader = req.headers.authorization;
 
+      if (!authHeader) {
+        return res.status(401).send({ message: "No Authorization Header" });
+      }
 
-const verifyToken = async (req, res, next) => {
-  const authHeader = req.headers.authorization;
+      const token = authHeader.split(" ")[1];
+      if (!token) {
+        return res.status(401).send({ message: "Token missing" });
+      }
 
-  if (!authHeader) {
-    return res.status(401).send({ message: "No Authorization Header" });
-  }
-
-  const token = authHeader.split(" ")[1];
-  if (!token) {
-    return res.status(401).send({ message: "Token missing" });
-  }
-
-  try {
-    const decoded = await admin.auth().verifyIdToken(token);
-    // decoded.email, decoded.uid available
-    req.user = decoded;
-    next();
-  } catch (error) {
-    console.error("❌ Firebase token invalid:", error.message);
-    return res.status(401).send({ message: "Invalid Firebase Token" });
-  }
-};
-
+      try {
+        const decoded = await admin.auth().verifyIdToken(token);
+        // decoded.email, decoded.uid available
+        req.user = decoded;
+        next();
+      } catch (error) {
+        console.error("❌ Firebase token invalid:", error.message);
+        return res.status(401).send({ message: "Invalid Firebase Token" });
+      }
+    };
 
     // Role-based middlewares
     const verifyStudent = async (req, res, next) => {
@@ -121,7 +117,7 @@ const verifyToken = async (req, res, next) => {
       });
     };
 
-    //  User Routes 
+    //  User Routes
 
     // Save or update user after Firebase login
     app.put("/users", async (req, res) => {
@@ -190,7 +186,7 @@ const verifyToken = async (req, res, next) => {
       res.send(result);
     });
 
-    //  Tuition Routes 
+    //  Tuition Routes
 
     // Create Tuition Post (Student only
     app.post("/tuitions", verifyToken, verifyStudent, async (req, res) => {
@@ -308,7 +304,7 @@ const verifyToken = async (req, res, next) => {
       res.send(result);
     });
 
-    // Application Routes (Tutor Apply) 
+    // Application Routes (Tutor Apply)
 
     // Tutor applies to a tuition
     app.post("/applications", verifyToken, verifyTutor, async (req, res) => {
@@ -423,51 +419,49 @@ const verifyToken = async (req, res, next) => {
       res.send(result);
     });
 
-    //  Payment Routes (Stripe) 
+    //  Payment Routes (Stripe)
 
-app.post("/create-payment-intent", async (req, res) => {
-  const { price, studentEmail, tutorEmail, tuitionId } = req.body;
+    app.post("/create-payment-intent", async (req, res) => {
+      const { price, studentEmail, tutorEmail, tuitionId } = req.body;
 
-  const amount = Math.round(price * 100);
+      const amount = Math.round(price * 100);
 
-  const paymentIntent = await stripe.paymentIntents.create({
-    amount,
-    currency: "usd",
-    payment_method_types: ["card"],
-    metadata: {
-      tuitionId,
-      studentEmail,
-      tutorEmail,
-    },
-  });
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount,
+        currency: "usd",
+        payment_method_types: ["card"],
+        metadata: {
+          tuitionId,
+          studentEmail,
+          tutorEmail,
+        },
+      });
 
-  res.send({
-    clientSecret: paymentIntent.client_secret,
-  });
-});
+      res.send({
+        clientSecret: paymentIntent.client_secret,
+      });
+    });
 
+    app.patch("/payment-success", async (req, res) => {
+      const sessionId = req.query.session_id;
 
-app.patch("/payment-success", async (req, res) => {
-  const sessionId = req.query.session_id;
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
 
-  const session = await stripe.checkout.sessions.retrieve(sessionId);
+      const payment = {
+        transactionId: session.payment_intent,
+        tuitionId: session.metadata.tuitionId,
+        studentEmail: session.metadata.email,
+        amount: session.amount_total / 100,
+        paidAt: new Date(),
+      };
 
-  const payment = {
-    transactionId: session.payment_intent,
-    tuitionId: session.metadata.tuitionId,
-    studentEmail: session.metadata.email,
-    amount: session.amount_total / 100,
-    paidAt: new Date(),
-  };
+      await paymentsCollection.insertOne(payment);
 
-  await paymentsCollection.insertOne(payment);
-
-  res.send({
-    transactionId: payment.transactionId,
-    trackingId: new ObjectId().toString().slice(-8),
-  });
-});
-
+      res.send({
+        transactionId: payment.transactionId,
+        trackingId: new ObjectId().toString().slice(-8),
+      });
+    });
 
     app.post("/payments", async (req, res) => {
       const payment = req.body;
@@ -481,8 +475,6 @@ app.patch("/payment-success", async (req, res) => {
 
       res.send({ success: true });
     });
-
-
 
     // Get payment history (student/tutor)
     app.get("/payments/my", verifyToken, async (req, res) => {
@@ -521,7 +513,7 @@ app.patch("/payment-success", async (req, res) => {
       return { page, limit, skip };
     };
 
-    // Public: Get tutors (pagination + filters + search) 
+    // Public: Get tutors (pagination + filters + search)
     app.get("/tutors", async (req, res) => {
       try {
         const { page, limit, skip } = parsePagination(req);
@@ -644,7 +636,7 @@ app.patch("/payment-success", async (req, res) => {
       }
     );
 
-    //  Get my bookings (student or tutor) 
+    //  Get my bookings (student or tutor)
     app.get("/bookings/my", verifyToken, async (req, res) => {
       try {
         // if tutor: show bookings where tutorEmail matches (or tutorId for uid)
@@ -696,8 +688,8 @@ app.patch("/payment-success", async (req, res) => {
       }
     });
 
-    // Fetch messages for a tutor or booking 
-    
+    // Fetch messages for a tutor or booking
+
     app.get("/messages", verifyToken, async (req, res) => {
       try {
         const { tutorId, bookingId, limit = 50 } = req.query;
@@ -722,7 +714,7 @@ app.patch("/payment-success", async (req, res) => {
       }
     });
 
-    //  Admin: Approve tutor (example) 
+    //  Admin: Approve tutor (example)
     app.patch(
       "/admin/tutors/:id/approve",
       verifyToken,
@@ -744,7 +736,7 @@ app.patch("/payment-success", async (req, res) => {
       }
     );
 
-    //  Health Check 
+    //  Health Check
     app.get("/", (req, res) => {
       res.send("eTuitionBD Server is Running!");
     });

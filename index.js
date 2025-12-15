@@ -424,16 +424,47 @@ const verifyToken = async (req, res, next) => {
     });
 
     //  Payment Routes (Stripe) 
-    app.post("/create-payment-intent", verifyToken, async (req, res) => {
-  const { price } = req.body;
+
+app.post("/create-payment-intent", async (req, res) => {
+  const { price, studentEmail, tutorEmail, tuitionId } = req.body;
+
+  const amount = Math.round(price * 100);
 
   const paymentIntent = await stripe.paymentIntents.create({
-    amount: price * 100,
+    amount,
     currency: "usd",
+    payment_method_types: ["card"],
+    metadata: {
+      tuitionId,
+      studentEmail,
+      tutorEmail,
+    },
   });
 
   res.send({
     clientSecret: paymentIntent.client_secret,
+  });
+});
+
+
+app.patch("/payment-success", async (req, res) => {
+  const sessionId = req.query.session_id;
+
+  const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+  const payment = {
+    transactionId: session.payment_intent,
+    tuitionId: session.metadata.tuitionId,
+    studentEmail: session.metadata.email,
+    amount: session.amount_total / 100,
+    paidAt: new Date(),
+  };
+
+  await paymentsCollection.insertOne(payment);
+
+  res.send({
+    transactionId: payment.transactionId,
+    trackingId: new ObjectId().toString().slice(-8),
   });
 });
 
@@ -483,11 +514,6 @@ const verifyToken = async (req, res, next) => {
       });
     });
 
- 
-
-    // create bookings & messages collections
-
-    //  Helper: parsePagination 
     const parsePagination = (req) => {
       const page = Math.max(1, parseInt(req.query.page || "1", 10));
       const limit = Math.min(50, parseInt(req.query.limit || "12", 10));

@@ -41,7 +41,7 @@ const client = new MongoClient(process.env.MONGODB_URI, {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
     const db = client.db("eTuitionBD");
     const usersCollection = db.collection("users");
     const tuitionsCollection = db.collection("tuitions");
@@ -50,7 +50,7 @@ async function run() {
     const tutorsCollection = db.collection("tutors");
     const bookingsCollection = db.collection("bookings");
     const messagesCollection = db.collection("messages");
-    console.log("MongoDB Connected Successfully!");
+
 
     // JWT & Firebase Verify Middleware
 
